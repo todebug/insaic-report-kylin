@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ehcache>
+    <diskStore path="ehcacheDir"/>
+    <cache name="configEhCache" maxEntriesLocalHeap="0" eternal="true" memoryStoreEvictionPolicy="FIFO"/>
+</ehcache>

@@ -1,0 +1,8 @@
+# ***** environment setting *****
+
+#
+redis.host=10.134.11.11
+redis.port=17001
+redis.timeout=3000
+
+hbase.zookeeper.url=10.136.200.236:2181,10.136.200.237:2181,10.136.200.238:2181

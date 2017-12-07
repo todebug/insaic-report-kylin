@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:task="http://www.springframework.org/schema/task"
+       xmlns:util="http://www.springframework.org/schema/util"
+       xsi:schemaLocation="
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.1.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.1.xsd
+        http://www.springframework.org/schema/task http://www.springframework.org/schema/task/spring-task.xsd
+        http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util-3.1.xsd"
+       default-lazy-init="true">
+    <description>Spring公共配置</description>
+
+    <!-- 扫描加载注解 -->
+    <context:component-scan base-package="com.insaic.kylin"/>
+    <!-- EhCache 缓存配置 -->
+    <bean id="cacheManager" class="org.springframework.cache.ehcache.EhCacheCacheManager">
+        <property name="cacheManager" ref="cacheFactory"/>
+    </bean>
+    <bean id="cacheFactory" class="org.springframework.cache.ehcache.EhCacheManagerFactoryBean">
+        <property name="configLocation" value="classpath:/ehcache.xml"></property>
+        <property name="cacheManagerName" value="AppMonitorImplCacheManager"/>
+        <property name="shared" value="true"/>
+    </bean>
+    <!-- 定时任务 -->
+    <task:executor id="executor" pool-size="5" />
+    <task:scheduler id="scheduler" pool-size="5" />
+    <task:annotation-driven scheduler="scheduler" executor="executor" />
+    <!--<task:scheduled-tasks>-->
+        <!--<task:scheduled ref="kylinBaseService" method="dispatcherTimerDownLoadTask" cron="*/5 * * * * ?" />-->
+        <!--<task:scheduled ref="kylinBaseService" method="dispatcherTimerDownLoadTask1" cron="*/5 * * * * ?" />-->
+    <!--</task:scheduled-tasks>-->
+
+    <!--<bean id="kylinBaseService" class="com.insaic.kylin.service.impl.KylinBaseServiceImpl"/>-->
+
+    <!--dubbo客户端信息-->
+    <import resource="classpath:consumer.xml"/>
+    <!--dubbo客户端信息-->
+
+    <bean id="jedisCluster" class="com.insaic.base.redis.JedisClusterFactoryBean">
+        <property name="host" value="${redis.host}" />
+        <property name="port" value="${redis.port}" />
+        <property name="timeout" value="${redis.timeout}" />
+    </bean>
+
+    <bean id="redisMessageQueueHandler" class="com.insaic.base.redis.RedisMessageQueueHandler" />
+
+    <!-- production环境 -->
+    <beans profile="production">
+        <context:property-placeholder ignore-unresolvable="true" location="classpath:/application.properties" />
+        <util:properties id="configPropertites" location="classpath:/application.properties"/>
+    </beans>
+
+    <!-- local development环境 -->
+    <beans profile="development">
+        <context:property-placeholder ignore-resource-not-found="true"
+                                      location="
+                                                classpath:/application.development.properties" />
+        <util:properties id="configPropertites" location="classpath:/application.properties,
+                                                classpath:/application.development.properties"/>
+    </beans>
+
+    <!-- 功能测试环境 -->
+    <beans profile="functional">
+        <context:property-placeholder ignore-resource-not-found="true"
+                                      location="classpath:/application.properties,
+                                                classpath:/application.functional.properties" />
+        <util:properties id="configPropertites" location="classpath:/application.properties,
+                                                classpath:/application.functional.properties"/>
+    </beans>
+
+    <!-- 集成test环境 -->
+    <beans profile="test">
+        <context:property-placeholder ignore-resource-not-found="true"
+                                      location="classpath:/application.properties,
+                                                classpath:/application.test.properties" />
+        <util:properties id="configPropertites" location="classpath:/application.properties,
+                                                classpath:/application.test.properties"/>
+    </beans>
+
+    <!-- 预生产环境 -->
+    <beans profile="staging">
+        <context:property-placeholder
+                ignore-resource-not-found="true"
+                location="classpath:/application.properties,
+						  classpath:/application.staging.properties" />
+        <util:properties id="configPropertites" location="classpath:/application.properties,
+                                                classpath:/application.staging.properties"/>
+    </beans>
+
+</beans>

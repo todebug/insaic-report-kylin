@@ -1,0 +1,531 @@
+package com.insaic.kylin.service.logic;
+
+import com.insaic.base.exception.ExceptionUtil;
+import com.insaic.base.mapper.JsonMapper;
+import com.insaic.kylin.model.kylin.init.KylinLoadProject;
+import com.insaic.kylin.model.kylin.init.KylinLoadSelectOption;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections.map.HashedMap;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.HColumnDescriptor;
+import org.apache.hadoop.hbase.HTableDescriptor;
+import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.client.*;
+import org.apache.hadoop.hbase.util.Bytes;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Created by dongyang on 2017/9/26.
+ */
+@Component
+public class HbaseHandler {
+    private static final String KYLIN_LOAD_CONFIG = "KYLIN_LOAD_CONFIG";
+    private static final String SELECT_OPTION_INFO = "SELECT_OPTION_INFO";
+    private static final String TABLE_CONFIG_INFO = "TABLE_CONFIG_INFO";
+    private static final String OPTION_INFO = "OPTION_INFO";
+    private static final String CONFIG_INFO = "CONFIG_INFO";
+    private static final String KYLIN_LOAD_CONFIG_ROW_KEY_1 = "KYLIN_LOAD_CONFIG_ROW_KEY_1";
+    private static final String KYLIN_LOAD_SELECT_DATA = "kylinLoadSelectData";
+    private static final String KYLIN_LOAD_DATAS = "kylinLoadDatas";
+    private static final String HBASE_ZOOKEEPER_QUORUM = "hbase.zookeeper.quorum";
+
+    // hbase.zookeeper.quorum
+    @Value("#{configPropertites['hbase.zookeeper.url']}")
+    private String hbaseZookeeperQuorumUrl;
+    // hbase配置
+    private Configuration conf = null;
+//     声明静态配置
+//    static Configuration conf = null;
+//    static {
+//        conf = HBaseConfiguration.create();
+//        conf.set("hbase.zookeeper.quorum", "10.118.80.136:2181,10.118.80.137:2181,10.118.80.138:2181");
+//    }
+
+    /**
+     * @Author dongyang
+     * @Describe 更新数据库信息
+     * @Date 2017/10/18 下午2:57
+     */
+    public void updateKylinLoadInfo(Map<String, Object> operateInfo) {
+        // 1.创建表
+        String[] family = { SELECT_OPTION_INFO, TABLE_CONFIG_INFO };
+        this.createKylinTable(KYLIN_LOAD_CONFIG, family);
+        // 2.删除列
+        this.deleteKylinAllColumn(KYLIN_LOAD_CONFIG, KYLIN_LOAD_CONFIG_ROW_KEY_1);
+        // 3.添加数据
+        List<KylinLoadSelectOption> kylinLoadSelectOptions = (List<KylinLoadSelectOption>) operateInfo.get(KYLIN_LOAD_SELECT_DATA);
+        List<KylinLoadProject> kylinLoadProjects = (List<KylinLoadProject>) operateInfo.get(KYLIN_LOAD_DATAS);
+        JsonMapper jsonMapper = JsonMapper.nonEmptyMapper();
+        String optionInfoJson = jsonMapper.toJson(kylinLoadSelectOptions);
+        String configInfoJson = jsonMapper.toJson(kylinLoadProjects);
+        this.addKylinTableConfigInfo(KYLIN_LOAD_CONFIG_ROW_KEY_1, KYLIN_LOAD_CONFIG, OPTION_INFO, optionInfoJson, CONFIG_INFO, configInfoJson);
+    }
+
+    public void deleteKylinAllColumn(String tableName, String rowKey) {
+        try {
+            conf = HBaseConfiguration.create();
+            conf.set(HBASE_ZOOKEEPER_QUORUM, hbaseZookeeperQuorumUrl);
+            HTable table = new HTable(conf, Bytes.toBytes(tableName));
+            Delete deleteAll = new Delete(Bytes.toBytes(rowKey));
+            table.delete(deleteAll);
+        } catch (Exception e) {
+            ExceptionUtil.handleException(e);
+        }
+    }
+
+    /**
+     * @Author dongyang
+     * @Describe 创建kylin配置信息表
+     * @Date 2017/9/27 上午9:44
+     */
+    public void createKylinTable(String tableName, String[] family) {
+       try {
+           conf = HBaseConfiguration.create();
+           conf.set(HBASE_ZOOKEEPER_QUORUM, hbaseZookeeperQuorumUrl);
+           HBaseAdmin admin = new HBaseAdmin(conf);
+           HTableDescriptor desc = new HTableDescriptor(tableName);
+           for (int i = 0; i < family.length; i++) {
+               desc.addFamily(new HColumnDescriptor(family[i]));
+           }
+           if (!admin.tableExists(tableName)) {
+               admin.createTable(desc);
+           }
+       } catch (Exception e) {
+           ExceptionUtil.handleException(e);
+       }
+    }
+
+    /**
+     * @Author dongyang
+     * @Describe 添加记录
+     * @Date 2017/9/27 上午9:52
+     */
+    public void addKylinTableConfigInfo(String rowKey, String tableName, String optionInfo, String optionInfoJson, String configInfo, String configInfoJson) {
+        try {
+            conf = HBaseConfiguration.create();
+            conf.set(HBASE_ZOOKEEPER_QUORUM, hbaseZookeeperQuorumUrl);
+            // 设置rowkey
+            Put put = new Put(Bytes.toBytes(rowKey));
+            // HTabel负责跟记录相关的操作如增删改查等
+            HTable table = new HTable(conf, Bytes.toBytes(tableName));
+            // 获取表,获取所有的列族
+            HColumnDescriptor[] columnFamilies = table.getTableDescriptor().getColumnFamilies();
+            for (int i = 0; i < columnFamilies.length; i++) {
+                // 获取列族名
+                String familyName = columnFamilies[i].getNameAsString();
+                // article列族put数据
+                if (familyName.equals(SELECT_OPTION_INFO)) {
+                        put.add(Bytes.toBytes(familyName), Bytes.toBytes(optionInfo), Bytes.toBytes(optionInfoJson));
+                }
+                // author列族put数据
+                if (familyName.equals(TABLE_CONFIG_INFO)) {
+                        put.add(Bytes.toBytes(familyName), Bytes.toBytes(configInfo), Bytes.toBytes(configInfoJson));
+                }
+            }
+            table.put(put);
+        } catch (Exception e) {
+            ExceptionUtil.handleException(e);
+        }
+    }
+
+    /**
+     * @Author dongyang
+     * @Describe 获取前端载入信息
+     * @Date 2017/9/27 下午2:02
+     */
+    public Map<String, Object> getKylinLoadInfo() {
+        Map<String, Object> modelMap = new HashedMap();
+        try {
+            conf = HBaseConfiguration.create();
+            conf.set(HBASE_ZOOKEEPER_QUORUM, hbaseZookeeperQuorumUrl);
+            this.judgeCreateKylinTable(conf);
+            Get get = new Get(Bytes.toBytes(KYLIN_LOAD_CONFIG_ROW_KEY_1));
+            HTable table = new HTable(conf, Bytes.toBytes(KYLIN_LOAD_CONFIG));// 获取表
+            Result result = table.get(get);
+            JsonMapper jsonMapper = JsonMapper.nonEmptyMapper();
+            if (null != result && CollectionUtils.isNotEmpty(result.list())) {
+                for (KeyValue kv : result.list()) {
+                    String familyColumn = Bytes.toString(kv.getFamily());
+                    String qualifier = Bytes.toString(kv.getQualifier());
+                    String jsonValue = Bytes.toString(kv.getValue());
+                    if (SELECT_OPTION_INFO.equals(familyColumn)
+                            && OPTION_INFO.equals(qualifier)) {
+                        List<KylinLoadSelectOption> kylinLoadSelectOptions = jsonMapper.fromJson(jsonValue, jsonMapper.contructCollectionType(List.class, KylinLoadSelectOption.class));
+                        modelMap.put(KYLIN_LOAD_SELECT_DATA, kylinLoadSelectOptions);
+
+                    }
+                    if (TABLE_CONFIG_INFO.equals(familyColumn)
+                            && CONFIG_INFO.equals(qualifier)) {
+                        List<KylinLoadProject> kylinLoadProjects = jsonMapper.fromJson(jsonValue, jsonMapper.contructCollectionType(List.class, KylinLoadProject.class));
+                        modelMap.put(KYLIN_LOAD_DATAS, kylinLoadProjects);
+                    }
+                }
+            } else {
+                modelMap.put(KYLIN_LOAD_SELECT_DATA, null);
+                modelMap.put(KYLIN_LOAD_DATAS, null);
+            }
+        } catch (Exception e) {
+            ExceptionUtil.handleException(e);
+        }
+
+        return modelMap;
+    }
+
+    /**
+     * @Author dongyang
+     * @Describe 判断是否要创建表
+     * @Date 2017/11/9 下午3:44
+     */
+    private void judgeCreateKylinTable(Configuration conf) {
+        try {
+            String[] family = { SELECT_OPTION_INFO, TABLE_CONFIG_INFO };
+            HBaseAdmin admin = new HBaseAdmin(conf);
+            HTableDescriptor desc = new HTableDescriptor(KYLIN_LOAD_CONFIG);
+            for (int i = 0; i < family.length; i++) {
+                desc.addFamily(new HColumnDescriptor(family[i]));
+            }
+            if (!admin.tableExists(KYLIN_LOAD_CONFIG)) {
+                admin.createTable(desc);
+            }
+        } catch (Exception e) {
+            ExceptionUtil.handleException(e);
+        }
+    }
+
+    /*
+     * 创建表
+     *
+     * @tableName 表名
+     *
+     * @family 列族列表
+     */
+//    public static void creatTable(String tableName, String[] family)
+//            throws Exception {
+//        HBaseAdmin admin = new HBaseAdmin(conf);
+//        HTableDescriptor desc = new HTableDescriptor(tableName);
+//        for (int i = 0; i < family.length; i++) {
+//            desc.addFamily(new HColumnDescriptor(family[i]));
+//        }
+//        if (admin.tableExists(tableName)) {
+//            System.out.println("table Exists!");
+//            System.exit(0);
+//        } else {
+//            admin.createTable(desc);
+//            System.out.println("create table Success!");
+//        }
+//    }
+
+    /*
+     * 为表添加数据（适合知道有多少列族的固定表）
+     *
+     * @rowKey rowKey
+     *
+     * @tableName 表名
+     *
+     * @column1 第一个列族列表
+     *
+     * @value1 第一个列的值的列表
+     *
+     * @column2 第二个列族列表
+     *
+     * @value2 第二个列的值的列表
+     */
+//    public static void addData(String rowKey, String tableName,
+//                               String[] column1, String[] value1, String[] column2, String[] value2)
+//            throws IOException {
+//        Put put = new Put(Bytes.toBytes(rowKey));// 设置rowkey
+//        HTable table = new HTable(conf, Bytes.toBytes(tableName));// HTabel负责跟记录相关的操作如增删改查等//
+//        // 获取表
+//        HColumnDescriptor[] columnFamilies = table.getTableDescriptor() // 获取所有的列族
+//                .getColumnFamilies();
+//
+//        for (int i = 0; i < columnFamilies.length; i++) {
+//            String familyName = columnFamilies[i].getNameAsString(); // 获取列族名
+//            if (familyName.equals("article")) { // article列族put数据
+//                for (int j = 0; j < column1.length; j++) {
+//                    put.add(Bytes.toBytes(familyName),
+//                            Bytes.toBytes(column1[j]), Bytes.toBytes(value1[j]));
+//                }
+//            }
+//            if (familyName.equals("author")) { // author列族put数据
+//                for (int j = 0; j < column2.length; j++) {
+//                    put.add(Bytes.toBytes(familyName),
+//                            Bytes.toBytes(column2[j]), Bytes.toBytes(value2[j]));
+//                }
+//            }
+//        }
+//        table.put(put);
+//        System.out.println("add data Success!");
+//    }
+
+    /*
+     * 根据rwokey查询
+     *
+     * @rowKey rowKey
+     *
+     * @tableName 表名
+     */
+//    public static Result getResult(String tableName, String rowKey)
+//            throws IOException {
+//        Get get = new Get(Bytes.toBytes(rowKey));
+//        HTable table = new HTable(conf, Bytes.toBytes(tableName));// 获取表
+//        Result result = table.get(get);
+//        for (KeyValue kv : result.list()) {
+//            System.out.println("family:" + Bytes.toString(kv.getFamily()));
+//            System.out
+//                    .println("qualifier:" + Bytes.toString(kv.getQualifier()));
+//            System.out.println("value:" + Bytes.toString(kv.getValue()));
+//            System.out.println("Timestamp:" + kv.getTimestamp());
+//            System.out.println("-------------------------------------------");
+//        }
+//        return result;
+//    }
+
+    /*
+     * 遍历查询hbase表
+     *
+     * @tableName 表名
+     */
+//    public static void getResultScann(String tableName) throws IOException {
+//        Scan scan = new Scan();
+//        ResultScanner rs = null;
+//        HTable table = new HTable(conf, Bytes.toBytes(tableName));
+//        try {
+//            rs = table.getScanner(scan);
+//            for (Result r : rs) {
+//                for (KeyValue kv : r.list()) {
+//                    System.out.println("row:" + Bytes.toString(kv.getRow()));
+//                    System.out.println("family:"
+//                            + Bytes.toString(kv.getFamily()));
+//                    System.out.println("qualifier:"
+//                            + Bytes.toString(kv.getQualifier()));
+//                    System.out
+//                            .println("value:" + Bytes.toString(kv.getValue()));
+//                    System.out.println("timestamp:" + kv.getTimestamp());
+//                    System.out
+//                            .println("-------------------------------------------");
+//                }
+//            }
+//        } finally {
+//            rs.close();
+//        }
+//    }
+
+    /*
+     * 遍历查询hbase表
+     *
+     * @tableName 表名
+     */
+//    public static void getResultScann(String tableName, String start_rowkey,
+//                                      String stop_rowkey) throws IOException {
+//        Scan scan = new Scan();
+//        scan.setStartRow(Bytes.toBytes(start_rowkey));
+//        scan.setStopRow(Bytes.toBytes(stop_rowkey));
+//        ResultScanner rs = null;
+//        HTable table = new HTable(conf, Bytes.toBytes(tableName));
+//        try {
+//            rs = table.getScanner(scan);
+//            for (Result r : rs) {
+//                for (KeyValue kv : r.list()) {
+//                    System.out.println("row:" + Bytes.toString(kv.getRow()));
+//                    System.out.println("family:"
+//                            + Bytes.toString(kv.getFamily()));
+//                    System.out.println("qualifier:"
+//                            + Bytes.toString(kv.getQualifier()));
+//                    System.out
+//                            .println("value:" + Bytes.toString(kv.getValue()));
+//                    System.out.println("timestamp:" + kv.getTimestamp());
+//                    System.out
+//                            .println("-------------------------------------------");
+//                }
+//            }
+//        } finally {
+//            rs.close();
+//        }
+//    }
+
+    /*
+     * 查询表中的某一列
+     *
+     * @tableName 表名
+     *
+     * @rowKey rowKey
+     */
+//    public static void getResultByColumn(String tableName, String rowKey,
+//                                         String familyName, String columnName) throws IOException {
+//        HTable table = new HTable(conf, Bytes.toBytes(tableName));
+//        Get get = new Get(Bytes.toBytes(rowKey));
+//        get.addColumn(Bytes.toBytes(familyName), Bytes.toBytes(columnName)); // 获取指定列族和列修饰符对应的列
+//        Result result = table.get(get);
+//        for (KeyValue kv : result.list()) {
+//            System.out.println("family:" + Bytes.toString(kv.getFamily()));
+//            System.out
+//                    .println("qualifier:" + Bytes.toString(kv.getQualifier()));
+//            System.out.println("value:" + Bytes.toString(kv.getValue()));
+//            System.out.println("Timestamp:" + kv.getTimestamp());
+//            System.out.println("-------------------------------------------");
+//        }
+//    }
+
+    /*
+     * 更新表中的某一列
+     *
+     * @tableName 表名
+     *
+     * @rowKey rowKey
+     *
+     * @familyName 列族名
+     *
+     * @columnName 列名
+     *
+     * @value 更新后的值
+     */
+//    public static void updateTable(String tableName, String rowKey,
+//                                   String familyName, String columnName, String value)
+//            throws IOException {
+//        HTable table = new HTable(conf, Bytes.toBytes(tableName));
+//        Put put = new Put(Bytes.toBytes(rowKey));
+//        put.add(Bytes.toBytes(familyName), Bytes.toBytes(columnName),
+//                Bytes.toBytes(value));
+//        table.put(put);
+//        System.out.println("update table Success!");
+//    }
+
+    /*
+     * 查询某列数据的多个版本
+     *
+     * @tableName 表名
+     *
+     * @rowKey rowKey
+     *
+     * @familyName 列族名
+     *
+     * @columnName 列名
+     */
+//    public static void getResultByVersion(String tableName, String rowKey,
+//                                          String familyName, String columnName) throws IOException {
+//        HTable table = new HTable(conf, Bytes.toBytes(tableName));
+//        Get get = new Get(Bytes.toBytes(rowKey));
+//        get.addColumn(Bytes.toBytes(familyName), Bytes.toBytes(columnName));
+//        get.setMaxVersions(5);
+//        Result result = table.get(get);
+//        for (KeyValue kv : result.list()) {
+//            System.out.println("family:" + Bytes.toString(kv.getFamily()));
+//            System.out
+//                    .println("qualifier:" + Bytes.toString(kv.getQualifier()));
+//            System.out.println("value:" + Bytes.toString(kv.getValue()));
+//            System.out.println("Timestamp:" + kv.getTimestamp());
+//            System.out.println("-------------------------------------------");
+//        }
+//        /*
+//         * List<?> results = table.get(get).list(); Iterator<?> it =
+//         * results.iterator(); while (it.hasNext()) {
+//         * System.out.println(it.next().toString()); }
+//         */
+//    }
+
+    /*
+     * 删除指定的列
+     *
+     * @tableName 表名
+     *
+     * @rowKey rowKey
+     *
+     * @familyName 列族名
+     *
+     * @columnName 列名
+     */
+//    public static void deleteColumn(String tableName, String rowKey,
+//                                    String falilyName, String columnName) throws IOException {
+//        HTable table = new HTable(conf, Bytes.toBytes(tableName));
+//        Delete deleteColumn = new Delete(Bytes.toBytes(rowKey));
+//        deleteColumn.deleteColumns(Bytes.toBytes(falilyName),
+//                Bytes.toBytes(columnName));
+//        table.delete(deleteColumn);
+//        System.out.println(falilyName + ":" + columnName + "is deleted!");
+//    }
+
+    /*
+     * 删除指定的列
+     *
+     * @tableName 表名
+     *
+     * @rowKey rowKey
+     */
+//    public static void deleteAllColumn(String tableName, String rowKey)
+//            throws IOException {
+//        HTable table = new HTable(conf, Bytes.toBytes(tableName));
+//        Delete deleteAll = new Delete(Bytes.toBytes(rowKey));
+//        table.delete(deleteAll);
+//        System.out.println("all columns are deleted!");
+//    }
+
+    /*
+     * 删除表
+     *
+     * @tableName 表名
+     */
+//    public static void deleteTable(String tableName) throws IOException {
+//        HBaseAdmin admin = new HBaseAdmin(conf);
+//        admin.disableTable(tableName);
+//        admin.deleteTable(tableName);
+//        System.out.println(tableName + "is deleted!");
+//    }
+
+//    public static void main(String[] args) throws Exception {
+//        try {
+//            // 创建表
+//            String tableName = KYLIN_LOAD_CONFIG;
+//            String[] family = { SELECT_OPTION_INFO, TABLE_CONFIG_INFO };
+//            // createKylinTable(tableName, family);
+//            // 为表添加数据
+//            String optionInfo = OPTION_INFO;
+//            String optionInfoJson = "[{\"value\":\"new_Project\",\"label\":\"再保项目\",\"children\":[{\"value\":\"renew_Model\",\"label\":\"再保项目\",\"children\":[{\"value\":\"renew_Cube\",\"label\":\"再保cube\",\"children\":null}]}]},{\"value\":\"yihai_Project\",\"label\":\"一嗨项目\",\"children\":[{\"value\":\"yihai_Model\",\"label\":\"一嗨项目\",\"children\":[{\"value\":\"yihai_Cube\",\"label\":\"一嗨cube\",\"children\":null}]}]}]";
+//            String configInfo = CONFIG_INFO;
+//            String configInfoJson = "[{\"projectCode\":\"new_Project\",\"projectName\":\"再保项目\",\"kylinLoadModels\":[{\"modelCode\":\"renew_Model\",\"modelName\":\"再保模块\",\"kylinLoadCubes\":[{\"uuid\":\"111\",\"cubeCode\":\"renew_Cube\",\"cubeName\":\"再保cube\",\"kylinPrimaryTable\":{\"tableCode\":\"RPT_DEALER_RENEW_SUCCESS_M_KYLIN\",\"tableName\":\"经销商再保成功月表\",\"dimensionColumnInfos\":[{\"code\":\"BUS_TIME\",\"name\":\"统计时间\"},{\"code\":\"DEALER_CODE\",\"name\":\"经销商代码\"},{\"code\":\"INSURER_CODE\",\"name\":\"保险公司\"}],\"measureColumnInfos\":[{\"code\":\"COMPULSORY_NUM\",\"name\":\"交强险保单数量\"}]},\"kylinLoadMeasures\":[{\"code\":\"SUM\",\"name\":\"合计\",\"columnCode\":\"COMPULSORY_NUM\",\"columnName\":\"交强险保单数量\"}],\"kylinForeignTables\":[{\"tableCode\":\"INSURER_CONFIG\",\"tableName\":\"保险公司配置表\",\"kylinColumnInfos\":[{\"code\":\"INSURER_CODE\",\"name\":\"保险公司代码\"},{\"code\":\"SHORT_NAME\",\"name\":\"保险公司\"}]}],\"kylinJoinInfos\":[{\"tableCode\":\"INSURER_CONFIG\",\"tableName\":\"保险公司配置表\",\"showColumn\":\"SHORT_NAME\",\"associationColumn\":\"INSURER_CODE\",\"associationSqlInfo\":\"RPT_DEALER_RENEW_SUCCESS_M_KYLIN.INSURER_CODE = INSURER_CONFIG.INSURER_CODE\"}],\"kylinLimitInfos\":[{\"tableCode\":\"INSURER_CONFIG\",\"tableName\":\"保险公司配置表\",\"columnCode\":\"SHORT_NAME\",\"columnName\":\"保险公司\"},{\"tableCode\":\"RPT_DEALER_RENEW_SUCCESS_M_KYLIN\",\"tableName\":\"经销商再保成功月表\",\"columnCode\":\"DEALER_CODE\",\"columnName\":\"经销商代码\"},{\"tableCode\":\"RPT_DEALER_RENEW_SUCCESS_M_KYLIN\",\"tableName\":\"经销商再保成功月表\",\"columnCode\":\"INSURER_CODE\",\"columnName\":\"保险公司代码\"},{\"tableCode\":\"RPT_DEALER_RENEW_SUCCESS_M_KYLIN\",\"tableName\":\"经销商再保成功月表\",\"columnCode\":\"COMPULSORY_NUM\",\"columnName\":\"交强险保单数量\"}]}]}]},{\"projectCode\":\"yihai_Project\",\"projectName\":\"一嗨项目\",\"kylinLoadModels\":[{\"modelCode\":\"yihai_Model\",\"modelName\":\"一嗨模块\",\"kylinLoadCubes\":[{\"uuid\":\"222\",\"cubeCode\":\"yihai_Cube\",\"cubeName\":\"一嗨cube\",\"kylinPrimaryTable\":{\"tableCode\":\"YI_HAI_VEHICLE_DATA\",\"tableName\":\"一嗨数据\",\"dimensionColumnInfos\":[{\"code\":\"VEHICLE_MODEL\",\"name\":\"车型\"},{\"code\":\"CATEGORY_NAME\",\"name\":\"分类\"},{\"code\":\"AGE\",\"name\":\"年龄\"},{\"code\":\"TENANCY_TERM\",\"name\":\"租赁期限\"},{\"code\":\"CITY_NAME\",\"name\":\"城市\"}],\"measureColumnInfos\":[{\"code\":\"ORDER_CNT\",\"name\":\"数量\"}]},\"kylinLoadMeasures\":[{\"code\":\"SUM\",\"name\":\"合计\",\"columnCode\":\"ORDER_CNT\",\"columnName\":\"数量\"}],\"kylinForeignTables\":[],\"kylinJoinInfos\":null,\"kylinLimitInfos\":[{\"tableCode\":\"YI_HAI_VEHICLE_DATA\",\"tableName\":\"一嗨数据\",\"columnCode\":\"VEHICLE_MODEL\",\"columnName\":\"车型\"},{\"tableCode\":\"YI_HAI_VEHICLE_DATA\",\"tableName\":\"一嗨数据\",\"columnCode\":\"CATEGORY_NAME\",\"columnName\":\"分类\"},{\"tableCode\":\"YI_HAI_VEHICLE_DATA\",\"tableName\":\"一嗨数据\",\"columnCode\":\"AGE\",\"columnName\":\"年龄\"},{\"tableCode\":\"YI_HAI_VEHICLE_DATA\",\"tableName\":\"一嗨数据\",\"columnCode\":\"TENANCY_TERM\",\"columnName\":\"租赁期限\"},{\"tableCode\":\"YI_HAI_VEHICLE_DATA\",\"tableName\":\"一嗨数据\",\"columnCode\":\"CITY_NAME\",\"columnName\":\"城市\"}]}]}]}]";
+//            // addKylinTableConfigInfo(KYLIN_LOAD_CONFIG_ROW_KEY_1, KYLIN_LOAD_CONFIG, OPTION_INFO, optionInfoJson, CONFIG_INFO, configInfoJson);
+//            JsonMapper jsonMapper = JsonMapper.nonEmptyMapper();
+//            List<KylinLoadSelectOption> loadSelectInfo = jsonMapper.fromJson(optionInfoJson, jsonMapper.contructCollectionType(List.class, KylinLoadSelectOption.class));
+//            System.out.println(loadSelectInfo);
+//            List<KylinLoadProject> KylinLoadProject = jsonMapper.fromJson(configInfoJson, jsonMapper.contructCollectionType(List.class, KylinLoadProject.class));
+//            System.out.println(KylinLoadProject);
+//            //getKylinLoadInfo();
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//        }
+        // 遍历查询
+//        getResultScann("dongyangtest", "rowkey4", "rowkey5");
+//        // 根据row key范围遍历查询
+//        getResultScann("dongyangtest", "rowkey4", "rowkey5");
+//
+//        // 查询
+//        getResult("dongyangtest", "rowkey1");
+//
+//        // 查询某一列的值
+//        getResultByColumn("dongyangtest", "rowkey1", "author", "name");
+//
+//        // 更新列
+//        updateTable("dongyangtest", "rowkey1", "author", "name", "bin");
+//
+//        // 查询某一列的值
+//        getResultByColumn("dongyangtest", "rowkey1", "author", "name");
+//
+//        // 查询某列的多版本
+//        getResultByVersion("dongyangtest", "rowkey1", "author", "name");
+//
+//        // 删除一列
+//        deleteColumn("dongyangtest", "rowkey1", "author", "nickname");
+//
+//        // 删除所有列
+//        deleteAllColumn("dongyangtest", "rowkey1");
+
+        // 删除表
+//         deleteTable(KYLIN_LOAD_CONFIG);
+
+//    }
+}

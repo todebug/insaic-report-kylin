@@ -1,0 +1,182 @@
+package com.insaic.kylin.service.logic;
+
+import com.insaic.base.exception.ExceptionUtil;
+import com.insaic.base.utils.SpringBeanLocator;
+import com.insaic.base.utils.StringUtil;
+import com.insaic.common.security.entity.FunctionEO;
+import com.insaic.common.security.model.SecurityDTO;
+import com.insaic.common.security.service.SecurityService;
+import com.insaic.kylin.model.kylin.init.KylinLoadSelectOption;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections.map.HashedMap;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Created by dongyang on 2017/10/9.
+ */
+@Component
+public class AuthenticationHandler {
+
+    private final static String SYSTEM_CODE = "kylinReport";
+    private final static String SESSION_ID = "";
+    private final static String USER_IP = "";
+
+    /**
+     * @Author dongyang
+     * @Describe 登录验证
+     * @Date 2017/10/9 下午1:41
+     */
+    public Map<String, Object> loginVerification(String userCode, String password) {
+        Map<String, Object> modelMap = new HashedMap();
+        String msg = null;
+        try {
+            SecurityService securityService = SpringBeanLocator.getBean("securityService",SecurityService.class);
+            msg = securityService.login(userCode, password, SESSION_ID, USER_IP, SYSTEM_CODE);
+        } catch (Exception e) {
+            ExceptionUtil.handleException(e);
+            modelMap.put("loginFlag", false);
+            modelMap.put("errorMsg", "系统异常,请重试");
+            return modelMap;
+        }
+        if (StringUtil.isNotBlank(msg)) {
+            // 登录失败
+            modelMap.put("loginFlag", false);
+            switch (msg) {
+                case "ERROR_USER_NOT_EMPTY":
+                    modelMap.put("errorMsg", "用户名不能为空");
+                    break;
+                case "ERROR_PASSWORD_NOT_EMPTY":
+                    modelMap.put("errorMsg", "密码不能为空");
+                    break;
+                case "ERROR_USER_NOT_FOUND":
+                    modelMap.put("errorMsg", "账号不存在");
+                    break;
+                case "ERROR_MODIFY_PASSWORD":
+                    modelMap.put("errorMsg", "请修改密码");
+                    break;
+                case "ERROR_USER_PASSWORD":
+                    modelMap.put("errorMsg", "登陆失败次数过多，请稍后尝试");
+                    break;
+                default:
+                    modelMap.put("errorMsg", "用户名或密码错误");
+            }
+        } else {
+            // 获取前端页面菜单权限
+            this.getPageMenuAuthentication(userCode, modelMap);
+            // 登录成功
+            modelMap.put("loginFlag", true);
+            modelMap.put("userCode", userCode);
+        }
+
+        return modelMap;
+    }
+
+    /**
+     * @Author dongyang
+     * @Describe 下拉列表权限过滤
+     * @Date 2017/10/10 下午2:54
+     */
+    public List<KylinLoadSelectOption> getSelectMenuByUser(List<KylinLoadSelectOption> kylinLoadSelectOptions, String userCode) {
+        if (CollectionUtils.isEmpty(kylinLoadSelectOptions)) {
+            return null;
+        }
+        // 1.获取该用户的权限
+        SecurityDTO securityInfo = null;
+        try {
+            SecurityService securityService = SpringBeanLocator.getBean("securityService",SecurityService.class);
+            securityInfo = securityService.getUserSecurity(userCode, "INSAIC-REPORT");
+        } catch (Exception e) {
+            ExceptionUtil.handleException(e);
+        }
+        if(null == securityInfo){
+            return null;
+        }
+        List<FunctionEO> functionEOS = securityInfo.getFunctionEOList();
+        if (CollectionUtils.isEmpty(functionEOS)) {
+            return null;
+        }
+        // 2.获取该用户具有的权限
+        List<String> selectMenus = new ArrayList<>();
+        for (FunctionEO fun : functionEOS) {
+            if ("report_004_cq".equals(fun.getParentFuncCode())) {
+                selectMenus.add(fun.getFunctionCode());
+            }
+        }
+        if (CollectionUtils.isEmpty(selectMenus)) {
+            return null;
+        }
+        // 3.匹配权限
+        for (KylinLoadSelectOption selectOption1 : kylinLoadSelectOptions) {
+            if(CollectionUtils.isNotEmpty(selectOption1.getChildren())) {
+                for (KylinLoadSelectOption selectOption2 : selectOption1.getChildren()) {
+                    if(CollectionUtils.isNotEmpty(selectOption2.getChildren())) {
+                        Iterator<KylinLoadSelectOption> it = selectOption2.getChildren().iterator();
+                        while(it.hasNext()){
+                            KylinLoadSelectOption cube = it.next();
+                            if(!this.judgeHasMenu(selectMenus, cube.getValue())){
+                                it.remove();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return kylinLoadSelectOptions;
+    }
+
+    /**
+     * @Author dongyang
+     * @Describe 判断是否含有cube
+     * @Date 2017/11/10 下午4:40
+     */
+    private boolean judgeHasMenu(List<String> selectMenus, String cube) {
+        boolean flag = false;
+        for (String matchMenu : selectMenus) {
+            if (matchMenu.equals(cube)) {
+                flag = true;
+                break;
+            }
+        }
+
+        return flag;
+    }
+
+    /**
+     * @Author dongyang
+     * @Describe 页面菜单权限获取
+     * @Date 2017/10/19 下午1:38
+     */
+    private Map<String, Object> getPageMenuAuthentication(String userCode, Map<String, Object> modelMap) {
+        // 1.获取该用户的权限
+        SecurityDTO securityInfo = null;
+        try {
+            SecurityService securityService = SpringBeanLocator.getBean("securityService",SecurityService.class);
+            securityInfo = securityService.getUserSecurity(userCode, "INSAIC-REPORT");
+        } catch (Exception e) {
+            ExceptionUtil.handleException(e);
+        }
+        if(null == securityInfo){
+            return null;
+        }
+        List<FunctionEO> functionEOS = securityInfo.getFunctionEOList();
+        if (CollectionUtils.isEmpty(functionEOS)) {
+            return null;
+        }
+        // 2.获取该用户具有的权限
+        List<String> pageMenus = new ArrayList<>();
+        for (FunctionEO fun : functionEOS) {
+            if ("report_004_pm".equals(fun.getParentFuncCode())) {
+                pageMenus.add(fun.getFunctionCode());
+            }
+        }
+        modelMap.put("pageMenu", pageMenus);
+
+        return modelMap;
+    }
+}

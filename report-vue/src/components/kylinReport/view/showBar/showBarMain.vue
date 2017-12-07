@@ -1,0 +1,85 @@
+<template>
+  <div>
+    <div v-if="showInfo.cloumnInfos.length" style="height:400px;" class="showBarMain">
+      <div v-if="showInfo.cloumnInfos.length" class="el-table el-table--fit el-table--border
+        el-table--enable-row-hover el-table--enable-row-transition" style="width: 100%; height: 350px;">
+      <div class="el-table__header-wrapper">
+            <table cellspacing="0" cellpadding="0" border="0" class="el-table__header" style="width: 100%;border: 1px solid #e6ebf5;">
+              <thead>
+                    <tr >
+                      <!-- <th colspan="1" rowspan="1" class="el-table_1_column_1 is-leaf"
+                        v-if="showInfo.cloumnInfos.length" >
+                          <div class="cell">ID</div>
+                      </th> -->
+                      <th colspan="1" rowspan="1" class="el-table_1_column_1 is-leaf" style="background: #dfe4e4;color: #564c4c;"
+                        v-if="showInfo.cloumnInfos.length" v-for="cloumnInfo in showInfo.cloumnInfos">
+                          <div class="cell">{{cloumnInfo}}</div>
+                      </th>
+                  </tr>
+              </thead>
+            </table>
+        </div>
+        <div class="el-table__body-wrapper" style="height: 350px;">
+          <table cellspacing="0" cellpadding="0" border="0" class="el-table__body" style="width: 100%;">
+            <tbody>
+              <tr class="el-table__row" v-if="showInfo.results.length" v-for="(result,key) in showInfo.results">
+                <!-- <td class="el-table_1_column_7" v-if="result.length" >
+                  <div class="cell">{{key}}</div>
+                </td> -->
+                <td class="el-table_1_column_7" v-if="result.length" v-for="info in result">
+                  <div class="cell">{{info}}</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="!showInfo.results.length" class="el-table__body-wrapper" style="height: 200px;">
+          <span class="el-table__empty-text">暂无数据</span>
+        </div>
+      </div>
+    </div>
+    <div  v-if="!showInfo.cloumnInfos.length" style="height:400px;" class="noShowBarMain">
+      <div class="" style="background-color:#f5f7f9;width: 100%; height: 400px;">
+      </div>
+    </div>
+</div>
+</template>
+
+<script>
+
+export default {
+  name: 'showBarMain',
+  // data() {
+  //   return {
+  //
+  //   };
+  // },
+  computed: {
+    showInfo() {
+      return this.$store.state.showInfo.showInfo;
+    },
+  },
+};
+</script>
+
+<style scoped>
+::-webkit-scrollbar {
+  width: 0px;
+}
+.showBarMain {
+  margin: 0 auto;
+  background: #fff;
+  border-radius: 3px;
+  margin-bottom: 10px;
+  padding: 20px 20px 0;
+  position: relative;
+  border-color: #e5e6e9 #dfe0e4 #d0d1d5;
+}
+.noShowBarMain {
+  margin: 0 auto;
+  background: #ecedf0;
+  border-radius: 3px;
+  margin-bottom: 10px;
+  position: relative;
+}
+</style>

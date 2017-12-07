@@ -1,0 +1,450 @@
+<template>
+	<div class="self-form">
+    <el-form ref="form" :model="form" label-width="80px">
+      <el-form-item label="kylin">
+        <div class="self-cascader">
+          <el-cascader expand-trigger="hover" v-model="form.cube"
+            v-if="initInfo.cascadeSelect.length"
+            :options="initInfo.cascadeSelect" @change="selectChange">
+          </el-cascader>
+          <div v-if="initInfo.cascadeSelect.length === 0" style="margin-left:100px;">
+            尚未配置cube数据,请至<a href="http://10.136.200.239:7070/kylin/login" target="_blank" title="kylin系统">kylin</a>系统中进行配置.
+          </div>
+        </div>
+      </el-form-item>
+      <el-form-item label="度量">
+        <el-checkbox :indeterminate="isIndeterminate" v-model="checkAllMeasure"
+          v-if="initInfo.measures && initInfo.measures.length && form.cube && form.cube.length" @change="selectAllMeasure">全选</el-checkbox>
+        <el-checkbox-group v-model="form.measures" @change="selectMeasureChecked">
+          <el-checkbox v-if="form.cube && form.cube.length"
+            v-for="measure in initInfo.measures" :label="measure.code + '&&' + measure.columnCode"
+            :key="measure.columnCode">{{measure.columnName}}({{measure.name}})</el-checkbox>
+        </el-checkbox-group>
+      </el-form-item>
+      <el-form-item label="维度">
+        <el-checkbox-group v-model="form.dimensions" >
+          <el-checkbox v-if="form.cube && form.cube.length"
+            v-for="dimension in initInfo.dimensions" :label="dimension.code"
+            :key="dimension.code">{{dimension.name}}</el-checkbox>
+        </el-checkbox-group>
+        <el-collapse v-if="initInfo.dimensionsMore && initInfo.dimensionsMore.length">
+          <el-collapse-item v-if="form.cube && form.cube.length" title="更多..." name="1">
+            <div>
+              <el-checkbox-group v-if="form.cube && form.cube.length" v-model="form.dimensions" >
+                <el-checkbox v-for="dimension in initInfo.dimensionsMore" :label="dimension.code"
+                  :key="dimension.code">{{dimension.name}}</el-checkbox>
+              </el-checkbox-group>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
+      </el-form-item>
+      <el-form-item label="查询日期">
+        <el-date-picker
+          v-model="form.date"
+          type="daterange"
+          align="right"
+          placeholder="选择日期范围"
+          v-if="progressBar >= 1"
+          :picker-options="datePicker">
+        </el-date-picker>
+      </el-form-item>
+      <el-form-item label="限制条件">
+        <el-select v-model="addDimension"
+          v-if="initInfo.kylinLimitInfos && initInfo.kylinLimitInfos.length && form.cube && form.cube.length"
+          multiple filterable allow-create
+          popper-class="limitCondition"
+          placeholder="请添加限制条件" @change="addDimensions">
+          <el-option
+            v-for="(limitInfo, index) in initInfo.kylinLimitInfos"
+            :key="limitInfo.columnCode"
+            :label="limitInfo.columnName"
+            :value="limitInfo.tableCode + '&&' + limitInfo.columnCode">
+          </el-option>
+        </el-select>
+        <el-row :gutter="20">
+          <el-col :span="6"
+            v-for="(dimension, index) in dynamicDimension.dimensions"
+            :label="dimension.name"
+            :key="dimension.code"
+            :prop="dimension.name">
+            <div class="grid-content bg-purple">
+              <span>{{dimension.name}}</span>
+              <el-input v-model="dimension.value"></el-input>
+              <el-button type="primary" icon="delete" size="mini"
+                @click.prevent="removeDimension(dimension.code)">删除</el-button>
+            </div>
+          </el-col>
+        </el-row>
+      </el-form-item>
+      <div class="self-step">
+        <el-steps :space="200" :active="progressBar">
+          <el-step title="选择kylin" description=""></el-step>
+          <el-step title="选择维度/指标" description=""></el-step>
+          <el-step title="选择查询日期" description=""></el-step>
+        </el-steps>
+      </div>
+    </el-form>
+    <div class="self-search-btn">
+      <el-button type="success" :disabled="queryButtonControl"
+        @click="cubeQueryOperate()"
+        element-loading-text="拼命加载中"
+        v-loading.fullscreen.lock="fullscreenLoading">查询</el-button>
+      <el-button type="warning"  :disabled="generateFileButtonControl"
+        @click="generateExcelOperate()">生成Excel</el-button>
+      <el-button type="primary"  :disabled="queryButtonControl"
+        @click="showDownLoadFilesOperate()">下载Excel</el-button>
+    </div>
+    <el-dialog title="下载列表" :visible.sync="dialogDownloadTableVisible">
+      <el-table :data="generateExcelFiles" height="250" border style="width: 100%">>
+        <el-table-column property="fileName" label="文件"></el-table-column>
+        <el-table-column property="fileStatusName" label="状态"></el-table-column>
+        <el-table-column property="createTime" label="创建时间"></el-table-column>
+        <el-table-column property="updateTime" label="更新时间"></el-table-column>
+        <el-table-column label="操作">
+          <template scope="scope">
+            <el-button
+              @click.native.prevent="downLoadFileOperate(scope.$index, generateExcelFiles)"
+              type="text"
+              size="small">
+              点击下载
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+  </div>
+</template>
+
+<script>
+import utils from '@/utils';
+
+export default {
+  name: 'queryForm',
+  data() {
+    return {
+      // 用户自定义限制条件下拉select绑定数据
+      addDimension: [],
+      // 动态新增用户自定义查询条件绑定对象
+      dynamicDimension: {
+        // code(代码),name(显示名称),value(input录入值)
+        dimensions: [],
+      },
+      // 下载文件页面控制
+      dialogDownloadTableVisible: false,
+      // 度量全选标识
+      isIndeterminate: true,
+      // 度量全选标识
+      checkAllMeasure: true,
+      // 查询条件
+      form: {
+        cube: [],
+        measures: [],
+        dimensions: [],
+        date: [],
+      },
+      datePicker: {
+        shortcuts: [{
+          text: '最近一周',
+          onClick(picker) {
+            const end = new Date();
+            const start = new Date();
+            start.setTime(start.getTime() - 604800000);
+            picker.$emit('pick', [start, end]);
+          },
+        }, {
+          text: '最近一个月',
+          onClick(picker) {
+            const end = new Date();
+            const start = new Date();
+            start.setTime(start.getTime() - 2592000000);
+            picker.$emit('pick', [start, end]);
+          },
+        }, {
+          text: '最近三个月',
+          onClick(picker) {
+            const end = new Date();
+            const start = new Date();
+            start.setTime(start.getTime() - 7776000000);
+            picker.$emit('pick', [start, end]);
+          },
+        }],
+      },
+    };
+  },
+  watch: {
+    // initInfo: {
+    //   handler(curVal) {
+    //     // 手动刷新页面时,级联下拉数据暂未加载,故显示loading,含有数据则隐藏loading
+    //     if (curVal !== null && curVal.cascadeSelect && curVal.cascadeSelect.length) {
+    //       this.$store.dispatch('common_showLoading', false);
+    //     }
+    //   },
+    //   deep: true,
+    // },
+    // 添加用户自定义查询条件
+    'dynamicDimension.dimensions': {
+      handler(curVal) {
+        this.$store.dispatch('queryForm_addCustomizedDefinitionCondition', curVal);
+      },
+      deep: true,
+    },
+    // 监控级联选择变化,若变化则初始化相关信息
+    'form.cube': {
+      handler(curVal, oldVal) {
+        if (oldVal.length && curVal[2] !== oldVal[2]) {
+          this.addDimension = [];
+          this.dynamicDimension.dimensions = [];
+          this.isIndeterminate = true;
+          this.checkAllMeasure = true;
+          this.form.measures = [];
+          this.form.dimensions = [];
+          this.form.date = [];
+        }
+      },
+      deep: true,
+    },
+    // 添加用户查询条件
+    form: {
+      handler(curVal) {
+        this.$store.dispatch('queryForm_setPageQueryInfoByUserOperate', curVal);
+      },
+      deep: true,
+    },
+    // 根据进度条控制查询按钮是否显示
+    progressBar: {
+      handler(curVal) {
+        if (curVal === 3) {
+          this.$store.dispatch('queryForm_queryButtonControl', false);
+        } else {
+          this.$store.dispatch('queryForm_queryButtonControl', true);
+        }
+      },
+    },
+  },
+  computed: {
+    // 初始化载入数据
+    initInfo() {
+      return this.$store.state.queryForm.initInfo;
+    },
+    // 页面查询条件
+    query() {
+      return this.$store.state.queryForm.query;
+    },
+    // 进程条状态
+    progressBar() {
+      return this.$store.state.queryForm.progressBar;
+    },
+    // 查询按钮状态控制
+    queryButtonControl() {
+      return this.$store.state.queryForm.queryButtonControl;
+    },
+    // 生成下载文件按钮控制
+    generateFileButtonControl() {
+      return this.$store.state.queryForm.generateFileButtonControl;
+    },
+    // 下载文件列表
+    generateExcelFiles() {
+      return this.$store.state.queryForm.generateExcelFiles;
+    },
+    // 全屏加载
+    fullscreenLoading() {
+      return this.$store.state.common.fullscreenLoading;
+    },
+  },
+  methods: {
+    removeDimension(delCode) {
+      const deletedDimension = this.dynamicDimension.dimensions.filter(v => v.code !== delCode);
+      this.dynamicDimension.dimensions = [];
+      this.dynamicDimension.dimensions = deletedDimension;
+      this.addDimension = this.addDimension.filter(v => v !== delCode);
+    },
+    addDimensions(addCode) {
+      if (addCode.length) {
+        const existArry = [];
+        addCode.forEach(v1 => {
+          this.initInfo.kylinLimitInfos.forEach(v2 => {
+            const matchCode = `${v2.tableCode}&&${v2.columnCode}`;
+            if (v1 === matchCode) {
+              existArry.push({ code: matchCode, name: v2.columnName, value: '' });
+            }
+          });
+        });
+        existArry.forEach(v3 => {
+          this.dynamicDimension.dimensions.forEach(v4 => {
+            if (v3.code === v4.code) {
+              v3.value = v4.value;
+            }
+          });
+        });
+        this.dynamicDimension.dimensions = [];
+        this.dynamicDimension.dimensions = existArry;
+      }
+    },
+    // 度量全选操作触发事件
+    selectAllMeasure(event) {
+      if (event.target.checked) {
+        this.form.measures = [];
+        this.initInfo.measures.forEach(v => {
+          this.form.measures.push(v.columnCode);
+        });
+      } else {
+        this.form.measures = [];
+      }
+      this.isIndeterminate = false;
+    },
+    // 单独选择度量触发事件
+    selectMeasureChecked(value) {
+      const checkedCount = value.length;
+      this.checkAllMeasure = checkedCount === this.initInfo.measures.length;
+      this.isIndeterminate = checkedCount > 0 && checkedCount < this.initInfo.measures.length;
+    },
+    // 级联select值改变触发
+    selectChange(selectArray) {
+      this.$store.dispatch('queryForm_setPageQueryInfoBySelectCube', selectArray);
+    },
+    // sql查询cube
+    cubeQueryOperate() {
+      const conditionIsHasNull = this.query.limits.filter(v => v.value === '');
+      if (conditionIsHasNull.length && this.query.limits.length) {
+        this.$message({
+          message: '自定义查询条件为空,请确认!',
+          type: 'warning',
+        });
+      } else {
+        this.executeQuerySql();
+      }
+    },
+    executeQuerySql() {
+      this.$store.dispatch('common_showLoading', true);
+      // console.log(JSON.stringify(this.query));
+      this.$nextTick(() => {
+        utils.ajax('POST')('/kylin/querySql', this.query).then(
+          json => {
+            if (json.returnData.tableHead) {
+              // window.localStorage.setItem('bbb', JSON.stringify(json));
+              this.$store.dispatch('showInfo_renderTable', json);
+              this.$nextTick(() => this.$store.dispatch('common_showLoading', false));
+            } else {
+              this.$nextTick(() => this.$store.dispatch('common_showLoading', false));
+              this.$notify.error({
+                title: '处理异常',
+                message: `执行sql为: ${json.querySql}`,
+                duration: 0,
+              });
+            }
+          });
+        // const json = JSON.parse(window.localStorage.getItem('bbb'));
+        // this.$store.dispatch('showInfo_renderTable', json);
+        // this.$nextTick(() => this.$store.dispatch('common_showLoading', false));
+      });
+    },
+    // 生成下载文件操作
+    generateExcelOperate() {
+      const conditionIsHasNull = this.query.limits.filter(v => v.value === '');
+      if (conditionIsHasNull.length && this.query.limits.length) {
+        this.$message({
+          message: '自定义查询条件为空,请确认!',
+          type: 'warning',
+        });
+      } else {
+        this.executeGenerateExcel();
+      }
+    },
+    executeGenerateExcel() {
+      this.$store.dispatch('queryForm_generateFileButtonControl', true);
+      utils.ajax('POST')('/kylin/addDownloadFile', this.query).then(
+        json => {
+          // window.localStorage.setItem('ccc', JSON.stringify(json));
+          this.$store.dispatch('queryForm_showDownloadFiles', json.downloadInfo);
+          this.$nextTick(() => this.$message('当前查询已加入后台生成excle队列,请等待处理完成!'));
+        });
+      // const json = JSON.parse(window.localStorage.getItem('ccc'));
+      // this.$store.dispatch('queryForm_showDownloadFiles', json.downloadInfo);
+      // this.$nextTick(() => this.$message('当前查询已加入后台生成excle队列,请等待处理完成!'));
+      setTimeout(() => this.$store.dispatch('queryForm_generateFileButtonControl', false), 3000);
+    },
+    showDownLoadFilesOperate() {
+      this.dialogDownloadTableVisible = true;
+    },
+    // 下载文件操作
+    downLoadFileOperate(index, row) {
+      if (!row[index].updateTime) {
+        this.$message({
+          message: '文件正在生成中,请稍后!',
+          type: 'warning',
+        });
+      } else {
+        const url = `/kylin/downloadExcelFile/${row[index].fileCode}`;
+        utils.ajax('GET')(url, `${row[index].fileName}.xlsx`).then(
+          json => {
+            if (json === 202) {
+              this.$message.error('下载文件不存在,请重新生成!');
+            } else {
+              this.$message({
+                message: '下载成功!',
+                type: 'success',
+              });
+            }
+          });
+      }
+    },
+  },
+  created() {
+    // 手动刷新页面时,级联下拉数据暂未加载,故显示loading
+    // if (!this.initInfo.cascadeSelect.length) {
+    //   this.$store.dispatch('common_showLoading', true);
+    // }
+  },
+  beforeMount() {
+    // 定时查询下载文件状态
+    setInterval(() => {
+      if (this.generateExcelFiles.length) {
+        const todoFiles = this.generateExcelFiles.filter(value => value.fileStatus === 'generating');
+        if (todoFiles.length) {
+          utils.ajax('GET')('/kylin/refreshDownloadFileStatus').then(
+            json => {
+              this.$store.dispatch('queryForm_showDownloadFiles', json.downloadInfo);
+            });
+        }
+      }
+    }, 1000);
+  },
+};
+</script>
+
+<style scoped>
+.self-form {
+  padding-top: 10px;
+}
+.self-cascader .el-cascader {
+  width: 300px;
+}
+.self-search-btn {
+  padding: 10px;
+  text-align: center;
+  border-top: none;
+}
+.self-step {
+  padding: 10px;
+  border-top: none;
+  margin-left: 300px;
+}
+.el-select {
+  width: 220px;
+}
+</style>
+<style>
+/*覆盖下拉展示框的边框颜色*/
+.el-collapse-item__wrap {
+  border-bottom: none;
+}
+.el-collapse {
+  border: none;
+}
+.el-collapse-item__header {
+  border-bottom: none;
+}
+.el-form-item__content .el-form-item__content {
+  width: 23%;
+}
+</style>

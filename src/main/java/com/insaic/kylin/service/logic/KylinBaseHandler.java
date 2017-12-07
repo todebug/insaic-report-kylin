@@ -1,0 +1,238 @@
+package com.insaic.kylin.service.logic;
+
+import com.insaic.base.exception.ExceptionUtil;
+import com.insaic.base.mapper.JsonMapper;
+import com.insaic.base.utils.HttpUtils;
+import com.insaic.base.utils.StringUtil;
+import com.insaic.kylin.model.kylin.query.KylinQueryInfo;
+import com.insaic.kylin.model.kylin.receive.*;
+import com.sun.org.apache.xml.internal.security.utils.Base64;
+import org.apache.commons.collections.MapUtils;
+import org.apache.commons.collections.map.HashedMap;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.util.EntityUtils;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
+import java.util.*;
+
+/**
+ * Created by dongyang on 2017/9/12.
+ */
+@Component
+public class KylinBaseHandler {
+    private static final String ACCESS_TYPE_POST = "post";
+    private static final String ACCESS_TYPE_GET = "get";
+    private static final String KYLIN_URL_CUBES = "kylin/api/cubes/";
+    private static final String KYLIN_URL_CUBE_DESC = "kylin/api/cube_desc/";
+    private static final String KYLIN_URL_TABLES_AND_COLUMNS = "kylin/api/tables_and_columns/";
+    private static final String KYLIN_URL_MODEL = "kylin/api/model/";
+    private static final String KYLIN_URL_USER_AUTHENTICATION = "kylin/api/user/authentication/";
+    private static final String KYLIN_URL_QUERY = "kylin/api/query/";
+
+    @Value("#{configPropertites['kylin.base.url']}")
+    private String KYLIN_URL_BASE;
+    /**
+     * @Author dongyang
+     * @Describe 初始化载入select信息
+     * @Date 2017/9/13 上午11:13
+     */
+    public Map<String, Object> loadSelectInfo() {
+        Map<String, Object> modelMap = new HashMap<>();
+
+
+
+        return modelMap;
+    }
+
+
+    /**
+     * @Author dongyang
+     * @Describe 获取querySql信息
+     * @Date 2017/9/12 下午8:10
+     */
+    public QueryReturnData getKylinQuery(KylinQueryInfo queryInfo) {
+        Map<String, String> map = new HashedMap();
+        if (StringUtil.isNotBlank(queryInfo.getProject())) {
+            map.put("project", queryInfo.getProject());
+        }
+        if (StringUtil.isNotBlank(queryInfo.getSql())) {
+            map.put("sql", queryInfo.getSql());
+        }
+        if (StringUtil.isNotBlank(queryInfo.getAcceptPartial())) {
+            map.put("acceptPartial", queryInfo.getAcceptPartial());
+        }
+        if (StringUtil.isNotBlank(queryInfo.getOffset())) {
+            map.put("offset", queryInfo.getOffset());
+        }
+        if (StringUtil.isNotBlank(queryInfo.getLimit())) {
+            map.put("limit", queryInfo.getLimit());
+        }
+        String response = this.sendData(ACCESS_TYPE_POST, KYLIN_URL_QUERY, map);
+        QueryReturnData queryReturnData = JsonMapper.nonEmptyMapper().fromJson(response, QueryReturnData.class);
+
+        return queryReturnData;
+    }
+
+    /**
+     * @Author dongyang
+     * @Describe 获取cubes列表
+     * @Date 2017/9/12 下午6:39
+     */
+    public List<CubesReturnData> getKylinCubes() {
+        String response = this.sendData(ACCESS_TYPE_GET, KYLIN_URL_CUBES, null);
+        JsonMapper jsonMapper = JsonMapper.nonEmptyMapper();
+        List<CubesReturnData> cubesReturnDatas = jsonMapper.fromJson(response, jsonMapper.contructCollectionType(List.class, CubesReturnData.class));
+
+        return cubesReturnDatas;
+    }
+
+    /**
+     * @Author dongyang
+     * @Describe 获取单个cube内容(非详细)
+     * @Date 2017/9/12 下午6:40
+     */
+    public CubesReturnData getKylinCube(String cube) {
+        String response = this.sendData(ACCESS_TYPE_GET, KYLIN_URL_CUBES + cube, null);
+        CubesReturnData cubesReturnData = JsonMapper.nonEmptyMapper().fromJson(response, CubesReturnData.class);
+
+        return cubesReturnData;
+    }
+
+    /**
+     * @Author dongyang
+     * @Describe 获取单个cube内容(详细)
+     * @Date 2017/9/12 下午6:47
+     */
+    public List<CubeDescReturnData> getKylinCubeDesc(String cube) {
+        String response = this.sendData(ACCESS_TYPE_GET, KYLIN_URL_CUBE_DESC + cube, null);
+        JsonMapper jsonMapper = JsonMapper.nonEmptyMapper();
+        List<CubeDescReturnData> cubeDescReturnDatas = jsonMapper.fromJson(response, jsonMapper.contructCollectionType(List.class, CubeDescReturnData.class));
+
+        return cubeDescReturnDatas;
+    }
+
+    /**
+     * @Author dongyang
+     * @Describe 获取某一project下表及列信息
+     * @Date 2017/9/12 下午7:07
+     */
+    public List<TablesAndColumnsReturnData> getKylinTablesAndColumns(String project) {
+        Map<String, String> map = new HashedMap();
+        map.put("project", project);
+        String response = this.sendData(ACCESS_TYPE_GET, KYLIN_URL_TABLES_AND_COLUMNS, map);
+        JsonMapper jsonMapper = JsonMapper.nonEmptyMapper();
+        List<TablesAndColumnsReturnData> tablesAndColumnsReturnDatas = jsonMapper.fromJson(response, jsonMapper.contructCollectionType(List.class, TablesAndColumnsReturnData.class));
+
+        return tablesAndColumnsReturnDatas;
+    }
+
+    /**
+     * @Author dongyang
+     * @Describe 获取model内容
+     * @Date 2017/9/12 下午7:41
+     */
+    public ModelReturnData getKylinModel(String model) {
+        String response = this.sendData(ACCESS_TYPE_GET, KYLIN_URL_MODEL + model, null);
+        ModelReturnData modelReturnData = JsonMapper.nonEmptyMapper().fromJson(response, ModelReturnData.class);
+
+        return modelReturnData;
+    }
+
+    /**
+     * @Author dongyang
+     * @Describe 获取登录用户权限信息
+     * @Date 2017/9/12 下午8:10
+     */
+    public UserAuthenticationReturnData getKylinUserAuthentication() {
+        String response = this.sendData(ACCESS_TYPE_POST, KYLIN_URL_USER_AUTHENTICATION, null);
+        UserAuthenticationReturnData userAuthenticationReturnData = JsonMapper.nonEmptyMapper().fromJson(response, UserAuthenticationReturnData.class);
+
+        return userAuthenticationReturnData;
+    }
+
+    private String sendData(String accessType, String url, Map<String, String> params) {
+        HttpResponse response = null;
+        String baseUrl = KYLIN_URL_BASE + url;
+        try {
+            HttpClient httpclient = new DefaultHttpClient();
+            String authorization = new String(Base64.encode(new String("ADMIN" + ":" + "KYLIN").getBytes()));
+            if (ACCESS_TYPE_GET.equals(accessType)) {
+                if (MapUtils.isNotEmpty(params)) {
+                    StringBuffer strtTotalURL = new StringBuffer("");
+                    if(strtTotalURL.indexOf("?") == -1) {
+                        strtTotalURL.append(baseUrl).append("?").append(this.getUrl(params, HttpUtils.URL_PARAM_DECODECHARSET_UTF8));
+                    } else {
+                        strtTotalURL.append(baseUrl).append("&").append(this.getUrl(params, HttpUtils.URL_PARAM_DECODECHARSET_UTF8));
+                    }
+                    baseUrl = strtTotalURL.toString();
+                }
+                HttpGet httpGet = new HttpGet(baseUrl);
+                httpGet.addHeader("Authorization", "Basic " + authorization); //认证token
+                httpGet.addHeader("Content-Type", "application/json");
+                httpGet.addHeader("User-Agent", "imgfornote");
+                response = httpclient.execute(httpGet);
+            } else if (ACCESS_TYPE_POST.equals(accessType)) {
+                HttpPost httpPost = new HttpPost(baseUrl);
+                httpPost.addHeader("Authorization", "Basic " + authorization); //认证token
+                httpPost.addHeader("Content-Type", "application/json");
+                httpPost.addHeader("User-Agent", "imgfornote");
+                if (MapUtils.isNotEmpty(params)) {
+                    httpPost.setEntity(new StringEntity(JsonMapper.nonDefaultMapper().toJson(params), HttpUtils.URL_PARAM_DECODECHARSET_UTF8));
+                }
+                response = httpclient.execute(httpPost);
+            }
+            if (200 == response.getStatusLine().getStatusCode()) {
+                return EntityUtils.toString(response.getEntity(), HttpUtils.URL_PARAM_DECODECHARSET_UTF8);
+            } else {
+                return null;
+            }
+        } catch (Exception e) {
+            ExceptionUtil.handleException(e, "kylin/api服务接口返回信息异常!");
+        }
+
+        return null;
+    }
+
+    private String getUrl(Map<String, String> map, String valueEnc) {
+        if(null != map && map.keySet().size() != 0) {
+            StringBuffer url = new StringBuffer();
+            Set keys = map.keySet();
+            Iterator strURL = keys.iterator();
+
+            while(strURL.hasNext()) {
+                String key = (String)strURL.next();
+                if(map.containsKey(key)) {
+                    String val = (String)map.get(key);
+                    String str = val != null?val:"";
+
+                    try {
+                        str = URLEncoder.encode(str, valueEnc);
+                    } catch (UnsupportedEncodingException var9) {
+                        var9.printStackTrace();
+                    }
+
+                    url.append(key).append("=").append(str).append("&");
+                }
+            }
+
+            String strURL1 = "";
+            strURL1 = url.toString();
+            if("&".equals("" + strURL1.charAt(strURL1.length() - 1))) {
+                strURL1 = strURL1.substring(0, strURL1.length() - 1);
+            }
+
+            return strURL1;
+        } else {
+            return "";
+        }
+    }
+
+}

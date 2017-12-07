@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:dubbo="http://code.alibabatech.com/schema/dubbo"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+       http://code.alibabatech.com/schema/dubbo http://code.alibabatech.com/schema/dubbo/dubbo.xsd">
+
+    <!-- 消费方应用名，用于计算依赖关系 -->
+    <dubbo:application name="kylin-show" logger="slf4j" />
+
+    <!-- 使用zookeeper注册中心暴露服务地址 -->
+    <dubbo:registry protocol="zookeeper" address="${zookeeper.url}" />
+
+    <dubbo:annotation package="com.insaic.kylin" />
+    <dubbo:reference id="securityService" interface="com.insaic.common.security.service.SecurityService" version="1.0.0" />
+    <dubbo:reference id="securityUserService" interface="com.insaic.common.security.service.SecurityUserService" version="1.0.0" />
+    <dubbo:reference id="dealerManagementService" interface="com.insaic.dms.service.DealerManagementService" version="1.0.0" />
+    <dubbo:consumer cluster="failfast" timeout="60000" check="false" />
+
+</beans>

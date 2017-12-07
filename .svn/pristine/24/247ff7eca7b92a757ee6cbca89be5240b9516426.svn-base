@@ -1,0 +1,205 @@
+import * as types from '../mutation-types';
+
+// initial state
+const state = {
+  // 页面初始化加载数据
+  initInfo: {
+    cascadeSelect: [],
+    loadInfo: [],
+    measures: [],
+    dimensions: [],
+    dimensionsMore: [],
+    kylinLimitInfos: [],
+  },
+  // 查询条件
+  query: {
+    project: '',
+    model: '',
+    cube: '',
+    primaryTable: '',
+    foreignTables: [],
+    joinInfos: [],
+    dimensions: [],
+    measures: [],
+    date: [],
+    limits: [],
+    acceptPartial: 'false',
+    offset: '0',
+    limit: '100',
+    kylinPrimaryTable: {},
+    kylinLoadMeasures: [],
+    kylinForeignTables: [],
+  },
+  // 进度条
+  progressBar: 0,
+  // 查询按钮控制
+  queryButtonControl: true,
+  // 生成下载文件按钮控制
+  generateFileButtonControl: true,
+  // 生成下载文件列表
+  generateExcelFiles: [],
+};
+
+// getters
+// const getters = {
+//   checkoutStatus: state.checkoutStatus,
+// };
+
+// actions
+const actions = {
+  queryForm_initKylinQueryInfo({ commit }) {
+    commit(types.INIT_KYLIN_INFO);
+  },
+  queryForm_initLoadInfo({ commit }, initLoadInfo) {
+    commit(types.LOAD_INIT_INFO, initLoadInfo);
+  },
+  queryForm_setPageQueryInfoBySelectCube({ commit }, selectArray) {
+    commit(types.SET_PAGE_QUERY_INFO_BY_SELECT_CUBE, selectArray);
+  },
+  queryForm_setPageQueryInfoByUserOperate({ commit }, form) {
+    commit(types.SET_QUERY_INFO_BY_USER_OPERATE, form);
+  },
+  queryForm_queryButtonControl({ commit }, flag) {
+    commit(types.QUERY_BUTTON_CONTROL, flag);
+  },
+  queryForm_generateFileButtonControl({ commit }, flag) {
+    commit(types.GENERATE_FILE_BUTTON_CONTROL, flag);
+  },
+  queryForm_showDownloadFiles({ commit }, files) {
+    commit(types.SHOW_DOWNLOAD_FILES, files);
+  },
+  queryForm_addCustomizedDefinitionCondition({ commit }, queryArray) {
+    commit(types.ADD_CUSTOMIZED_DEFINITION_CONDITION, queryArray);
+  },
+};
+
+// mutations
+const mutations = {
+  [types.INIT_KYLIN_INFO]() {
+    // state.initInfo.cascadeSelect = [];
+    // state.initInfo.loadInfo = [];
+    // state.initInfo.measures = [];
+    // state.initInfo.dimensions = [];
+    // state.initInfo.kylinLimitInfos = [];
+    state.query.project = '';
+    state.query.model = '';
+    state.query.cube = '';
+    state.query.primaryTable = '';
+    state.query.foreignTables = [];
+    state.query.joinInfos = [];
+    state.query.dimensions = [];
+    state.query.measures = [];
+    state.query.date = [];
+    state.query.limits = [];
+    state.query.acceptPartial = 'false';
+    state.query.offset = '0';
+    state.query.limit = '100';
+    state.query.kylinPrimaryTable = {};
+    state.query.kylinLoadMeasures = [];
+    state.query.kylinForeignTables = [];
+    state.progressBar = 0;
+    state.queryButtonControl = true;
+    state.generateFileButtonControl = true;
+    state.generateExcelFiles = [];
+  },
+  [types.LOAD_INIT_INFO](stateEslinitRule, initLoadInfo) {
+    // 加载初始化查询信息
+    if (initLoadInfo.kylinLoadSelectData && initLoadInfo.kylinLoadSelectData.length) {
+      state.initInfo.cascadeSelect = initLoadInfo.kylinLoadSelectData;
+    } else {
+      state.initInfo.cascadeSelect = [];
+    }
+    if (initLoadInfo.kylinLoadDatas) {
+      state.initInfo.loadInfo = initLoadInfo.kylinLoadDatas;
+    } else {
+      state.initInfo.loadInfo = [];
+    }
+  },
+  [types.SET_PAGE_QUERY_INFO_BY_SELECT_CUBE](stateEslinitRule, selectArray) {
+    // 根据用户选择cube设置查询条件
+    const project = state.initInfo.loadInfo.find(value1 => value1.projectCode === selectArray[0]);
+    const model = project.kylinLoadModels.find(value2 => value2.modelCode === selectArray[1]);
+    const cube = model.kylinLoadCubes.find(value3 => value3.cubeCode === selectArray[2]);
+    // 设置页面查询条件
+    state.initInfo.measures = cube.kylinLoadMeasures;
+    // 度量维度
+    state.initInfo.dimensions = [];
+    state.initInfo.dimensionsMore = [];
+    if (cube.kylinPrimaryTable.dimensionColumnInfos.length < 6) {
+      state.initInfo.dimensions = cube.kylinPrimaryTable.dimensionColumnInfos;
+    } else {
+      const lengthArr = cube.kylinPrimaryTable.dimensionColumnInfos.length;
+      state.initInfo.dimensions = cube.kylinPrimaryTable.dimensionColumnInfos.slice(0, 6);
+      state.initInfo.dimensionsMore = cube.kylinPrimaryTable.dimensionColumnInfos.slice(6,
+        lengthArr);
+    }
+    // 用户自定义限制条件
+    state.initInfo.kylinLimitInfos = cube.kylinLimitInfos;
+    // 设置sql查询条件
+    state.query.project = selectArray[0];
+    state.query.model = selectArray[1];
+    state.query.cube = selectArray[2];
+    state.query.primaryTable = cube.kylinPrimaryTable.tableCode;
+    state.query.foreignTables = cube.kylinForeignTables;
+    state.query.joinInfos = cube.kylinJoinInfos;
+    state.query.kylinPrimaryTable = cube.kylinPrimaryTable;
+    state.query.kylinLoadMeasures = cube.kylinLoadMeasures;
+    state.query.kylinForeignTables = cube.kylinForeignTables;
+    state.progressBar = 1;
+    state.queryButtonControl = true;
+    state.generateFileButtonControl = true;
+  },
+  [types.SET_QUERY_INFO_BY_USER_OPERATE](stateEslinitRule, form) {
+    // 根据用户选择设置查询条件,及进度条状态
+    state.query.measures = form.measures;
+    state.query.dimensions = form.dimensions;
+    state.query.date = form.date;
+    // dimension || measure 2
+    if ((state.query.dimensions.length
+      || state.query.measures.length)
+      && state.query.date[1]) {
+      state.progressBar = 3;
+    } else if ((state.query.dimensions.length
+      || state.query.measures.length)
+      && !state.query.date[1]) {
+      state.progressBar = 2;
+    } else if ((!state.query.dimensions.length
+      && !state.query.measures.length)
+      && !state.query.date[1]) {
+      state.progressBar = 1;
+    } else {
+      state.progressBar = 1;
+    }
+  },
+  [types.QUERY_BUTTON_CONTROL](stateEslinitRule, flag) {
+    // 查询按钮状态控制
+    state.queryButtonControl = flag;
+    state.generateFileButtonControl = flag;
+  },
+  [types.GENERATE_FILE_BUTTON_CONTROL](stateEslinitRule, flag) {
+    // 生成下载文件按钮状态控制
+    state.generateFileButtonControl = flag;
+  },
+  [types.SHOW_DOWNLOAD_FILES](stateEslinitRule, files) {
+    // 下载文件列表信息设置
+    state.generateExcelFiles = files;
+  },
+  [types.ADD_CUSTOMIZED_DEFINITION_CONDITION](stateEslinitRule, queryArray) {
+    // 添加用户自定义查询限制条件
+    if (queryArray.length) {
+      state.query.limits = [];
+      queryArray.forEach(v => {
+        state.query.limits.push({ code: v.code, value: v.value });
+      });
+    } else {
+      state.query.limits = [];
+    }
+  },
+};
+
+export default {
+  state,
+  // getters,
+  actions,
+  mutations,
+};
